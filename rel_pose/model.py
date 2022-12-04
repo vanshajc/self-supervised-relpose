@@ -90,22 +90,38 @@ class ViTEss(nn.Module):
                 nn.Conv2d(self.pool_feat1, self.pool_feat2, kernel_size=1, bias=True),
                 nn.BatchNorm2d(self.pool_feat2)
             )
+            # self.pose_regressor = nn.Sequential(
+            #     nn.Linear(self.H, self.H2),
+            #     nn.ReLU(),
+            #     nn.Linear(self.H2, self.H2),
+            #     nn.ReLU(), 
+            #     nn.Linear(self.H2, self.num_images * self.pose_size),
+            #     nn.Unflatten(1, (self.num_images, self.pose_size))
+            # )
             self.pose_regressor = nn.Sequential(
                 nn.Linear(self.H, self.H2),
                 nn.ReLU(),
                 nn.Linear(self.H2, self.H2),
                 nn.ReLU(), 
-                nn.Linear(self.H2, self.num_images * self.pose_size),
-                nn.Unflatten(1, (self.num_images, self.pose_size))
+                nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
+                nn.Unflatten(1, (self.num_images - 1, self.pose_size))
             )
         else:
+            # self.pose_regressor = nn.Sequential(
+            #     nn.Linear(self.H, self.H2), 
+            #     nn.ReLU(), 
+            #     nn.Linear(self.H2, self.H2), 
+            #     nn.ReLU(), 
+            #     nn.Linear(self.H2, self.num_images * self.pose_size),
+            #     nn.Unflatten(1, (self.num_images, self.pose_size))
+            # )
             self.pose_regressor = nn.Sequential(
                 nn.Linear(self.H, self.H2), 
                 nn.ReLU(), 
                 nn.Linear(self.H2, self.H2), 
                 nn.ReLU(), 
-                nn.Linear(self.H2, self.num_images * self.pose_size),
-                nn.Unflatten(1, (self.num_images, self.pose_size))
+                nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
+                nn.Unflatten(1, (self.num_images - 1, self.pose_size))
             )
 
     def update_intrinsics(self, input_shape, intrinsics):
@@ -123,7 +139,7 @@ class ViTEss(nn.Module):
         """ run feeature extraction networks """
 
         # normalize images
-        images = images[:, :, [2,1,0]] / 255.0
+        # images = images[:, :, [2,1,0]] / 255.0
         mean = torch.as_tensor([0.485, 0.456, 0.406], device=images.device)
         std = torch.as_tensor([0.229, 0.224, 0.225], device=images.device)
         images = images.sub_(mean[:, None, None]).div_(std[:, None, None])
@@ -169,11 +185,13 @@ class ViTEss(nn.Module):
 
     #     return out_Gs
 
-    def forward(self, images, Gs, intrinsics=None, inference=False):
+    def forward(self, images, Gs=None, intrinsics=None, inference=False):
         """ Estimates SE3 between pair of frames """
         # if not isinstance(Gs, SE3):
         #     Gs = SE3(torch.from_numpy(Gs).unsqueeze(0).cuda().float())
 
+        img1, img2 = torch.split(images, split_size_or_sections=3, dim=1)
+        images = torch.stack([img1, img2], dim=1)
         features, intrinsics = self.extract_features(images, intrinsics)
         B, _, _, _, _ = images.shape
 
@@ -200,6 +218,8 @@ class ViTEss(nn.Module):
             pose_preds = self.pose_regressor(features.reshape([B, -1]))
 
         # return self.normalize_preds(Gs, pose_preds, inference)
+
+        pose_preds = pose_preds.unsqueeze(2)
 
         axisangle = pose_preds[..., :3]
         translation = pose_preds[..., 3:]

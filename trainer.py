@@ -290,6 +290,7 @@ class Trainer:
                 pose_feats = {f_i: inputs["color_aug", f_i, 0] for f_i in self.opt.frame_ids}
 
             for f_i in self.opt.frame_ids[1:]:
+                intrinsics = None
                 if f_i != "s":
                     # To maintain ordering we always pass frames in temporal order
                     if f_i < 0:
@@ -303,8 +304,19 @@ class Trainer:
                         pose_inputs = torch.cat(pose_inputs, 1)
                     elif self.opt.pose_model_type == "relpose":
                         pose_inputs = torch.cat(pose_inputs, 1)
+                        K = inputs[('K', 0)]
+                        intrinsic_per_cam = torch.stack([
+                            K[:, 0, 0],
+                            K[:, 1, 1],
+                            K[:, 0, 2],
+                            K[:, 1, 2]
+                        ], dim=-1)
+                        intrinsics = torch.stack([intrinsic_per_cam] * 2, dim=1)
 
-                    axisangle, translation = self.models["pose"](pose_inputs)
+                    if intrinsics is not None:
+                        axisangle, translation = self.models["pose"](pose_inputs, intrinsics=intrinsics)
+                    else:
+                        axisangle, translation = self.models["pose"](pose_inputs)
                     outputs[("axisangle", 0, f_i)] = axisangle
                     outputs[("translation", 0, f_i)] = translation
 
