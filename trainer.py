@@ -23,6 +23,7 @@ from layers import *
 
 import datasets
 import networks
+from rel_pose import ViTEss as RelPose
 from IPython import embed
 
 
@@ -54,12 +55,20 @@ class Trainer:
         self.models["encoder"] = networks.ResnetEncoder(
             self.opt.num_layers, self.opt.weights_init == "pretrained")
         self.models["encoder"].to(self.device)
-        self.parameters_to_train += list(self.models["encoder"].parameters())
+        if self.opt.pose_model_type != "relpose":
+            self.parameters_to_train += list(self.models["encoder"].parameters())
+        else:
+            for param in self.models["encoder"].parameters():
+                param.requires_grad = False
 
         self.models["depth"] = networks.DepthDecoder(
             self.models["encoder"].num_ch_enc, self.opt.scales)
         self.models["depth"].to(self.device)
-        self.parameters_to_train += list(self.models["depth"].parameters())
+        if self.opt.pose_model_type != "relpose":
+            self.parameters_to_train += list(self.models["depth"].parameters())
+        else:
+            for param in self.models["depth"].parameters():
+                param.requires_grad = False
 
         if self.use_pose_net:
             if self.opt.pose_model_type == "separate_resnet":
@@ -84,6 +93,9 @@ class Trainer:
                 self.models["pose"] = networks.PoseCNN(
                     self.num_input_frames if self.opt.pose_model_input == "all" else 2)
 
+            elif self.opt.pose_model_type == "relpose":
+                self.models["pose"] = RelPose()
+
             self.models["pose"].to(self.device)
             self.parameters_to_train += list(self.models["pose"].parameters())
 
@@ -97,7 +109,11 @@ class Trainer:
                 self.models["encoder"].num_ch_enc, self.opt.scales,
                 num_output_channels=(len(self.opt.frame_ids) - 1))
             self.models["predictive_mask"].to(self.device)
-            self.parameters_to_train += list(self.models["predictive_mask"].parameters())
+            if self.opt.pose_model_type != "relpose":
+                self.parameters_to_train += list(self.models["predictive_mask"].parameters())
+            else:
+                for param in self.models["predictive_mask"].parameters():
+                    param.requires_grad = False
 
         self.model_optimizer = optim.Adam(self.parameters_to_train, self.opt.learning_rate)
         self.model_lr_scheduler = optim.lr_scheduler.StepLR(
@@ -285,6 +301,8 @@ class Trainer:
                         pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
                     elif self.opt.pose_model_type == "posecnn":
                         pose_inputs = torch.cat(pose_inputs, 1)
+                    elif self.opt.pose_model_type == "relpose":
+                        pose_inputs = torch.cat(pose_inputs, 1)
 
                     axisangle, translation = self.models["pose"](pose_inputs)
                     outputs[("axisangle", 0, f_i)] = axisangle
@@ -295,6 +313,8 @@ class Trainer:
                         axisangle[:, 0], translation[:, 0], invert=(f_i < 0))
 
         else:
+            assert self.opt.pose_model_type != "relpose", "Need 2 frames for relpose!"
+
             # Here we input all frames to the pose net (and predict all poses) together
             if self.opt.pose_model_type in ["separate_resnet", "posecnn"]:
                 pose_inputs = torch.cat(

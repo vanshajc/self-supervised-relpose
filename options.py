@@ -131,7 +131,7 @@ class MonodepthOptions:
                                  type=str,
                                  help="normal or shared",
                                  default="separate_resnet",
-                                 choices=["posecnn", "separate_resnet", "shared"])
+                                 choices=["posecnn", "separate_resnet", "shared", "relpose"])
 
         # SYSTEM options
         self.parser.add_argument("--no_cuda",

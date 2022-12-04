@@ -6,45 +6,56 @@ import torchvision.models as models
 
 from .modules.extractor import ResidualBlock
 from .modules.vision_transformer import _create_vision_transformer
-from lietorch import SE3
+# from lietorch import SE3
+
 
 class ViTEss(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args=None):
         super(ViTEss, self).__init__()
+        no_pos_encoding = False
+        noess = False
+        cross_features = False
+        use_single_softmax = False
+        l1_pos_encoding = False
+        fusion_transformer = True
+        fc_hidden_size = 512
+        pool_size = 60
+        transformer_depth = 6
 
         # hyperparams
-        self.noess = None
-        if 'noess' in args and args.noess != '':
-            self.noess = args.noess
+        # self.noess = None
+        # if 'noess' in args and args.noess != '':
+        #     self.noess = args.noess
+        self.noess = noess
         self.total_num_features = 192
         self.feature_resolution = (24, 24)
         self.num_images = 2
-        self.pose_size = 7
+        self.pose_size = 6
         self.num_patches = self.feature_resolution[0] * self.feature_resolution[1]
         extractor_final_conv_kernel_size = max(1, 28-self.feature_resolution[0]+1)
-        self.pool_feat1 = min(96, 4 * args.pool_size)
-        self.pool_feat2 = args.pool_size
-        self.H2 = args.fc_hidden_size
+        self.pool_feat1 = min(96, 4 * pool_size)
+        self.pool_feat2 = pool_size
+        self.H2 = fc_hidden_size
 
         # layers
-        self.flatten = nn.Flatten(0,1)
+        self.flatten = nn.Flatten(0, 1)
         self.resnet = models.resnet18(pretrained=True) # this will be overridden if we are loading pretrained model
         self.resnet.fc = nn.Identity()
         self.extractor_final_conv = ResidualBlock(128, self.total_num_features, 'batch', kernel_size=extractor_final_conv_kernel_size)
 
         self.fusion_transformer = None
-        if args.fusion_transformer:
+        if fusion_transformer:
             self.num_heads = 3
-            model_kwargs = dict(patch_size=16, embed_dim=self.total_num_features, depth=args.transformer_depth, 
+            model_kwargs = dict(patch_size=16, embed_dim=self.total_num_features, depth=transformer_depth, 
                                 num_heads=self.num_heads, 
-                                cross_features=args.cross_features,
-                                use_single_softmax=args.use_single_softmax,
-                                no_pos_encoding=args.no_pos_encoding,
-                                noess=args.noess, l1_pos_encoding=args.l1_pos_encoding)
+                                cross_features=cross_features,
+                                use_single_softmax=use_single_softmax,
+                                no_pos_encoding=no_pos_encoding,
+                                noess=noess, l1_pos_encoding=l1_pos_encoding)
             self.fusion_transformer = _create_vision_transformer('vit_tiny_patch16_384', **model_kwargs)
 
-            self.transformer_depth = args.transformer_depth
-            self.fusion_transformer.blocks = self.fusion_transformer.blocks[:args.transformer_depth]
+            self.transformer_depth = transformer_depth
+            self.fusion_transformer.blocks = self.fusion_transformer.blocks[:transformer_depth]
             self.fusion_transformer.patch_embed = nn.Identity()
             self.fusion_transformer.head = nn.Identity() 
             self.fusion_transformer.cls_token = None
@@ -56,7 +67,7 @@ class ViTEss(nn.Module):
             nn.init.xavier_uniform_(self.fusion_transformer.pos_embed) 
 
             pos_enc = 6
-            if args.no_pos_encoding or self.noess:
+            if no_pos_encoding or self.noess:
                 pos_enc = 0
             self.H = int(self.num_heads*2*(self.total_num_features//self.num_heads + pos_enc) * (self.total_num_features//self.num_heads))
         else:
@@ -105,7 +116,7 @@ class ViTEss(nn.Module):
         yidx = np.array([1,3])
         intrinsics[:,:,xidx] = scalex * intrinsics[:,:,xidx]
         intrinsics[:,:,yidx] = scaley * intrinsics[:,:,yidx]
-            
+
         return intrinsics
 
     def extract_features(self, images, intrinsics=None):
@@ -142,26 +153,26 @@ class ViTEss(nn.Module):
 
         return features, intrinsics
     
-    def normalize_preds(self, Gs, pose_preds, inference):
-        pred_out_Gs = SE3(pose_preds)
+    # def normalize_preds(self, Gs, pose_preds, inference):
+    #     pred_out_Gs = SE3(pose_preds)
         
-        normalized = pred_out_Gs.data[:,:,3:].norm(dim=-1).unsqueeze(2)
-        eps = torch.ones_like(normalized) * .01
-        pred_out_Gs_new = SE3(torch.clone(pred_out_Gs.data))
-        pred_out_Gs_new.data[:,:,3:] = pred_out_Gs.data[:,:,3:] / torch.max(normalized, eps)
-        these_out_Gs = SE3(torch.cat([Gs[:,:1].data, pred_out_Gs_new.data[:,1:]], dim=1))
+    #     normalized = pred_out_Gs.data[:,:,3:].norm(dim=-1).unsqueeze(2)
+    #     eps = torch.ones_like(normalized) * .01
+    #     pred_out_Gs_new = SE3(torch.clone(pred_out_Gs.data))
+    #     pred_out_Gs_new.data[:,:,3:] = pred_out_Gs.data[:,:,3:] / torch.max(normalized, eps)
+    #     these_out_Gs = SE3(torch.cat([Gs[:,:1].data, pred_out_Gs_new.data[:,1:]], dim=1))
             
-        if inference:
-            out_Gs = these_out_Gs.data[0].cpu().numpy()
-        else:
-            out_Gs = [these_out_Gs]
+    #     if inference:
+    #         out_Gs = these_out_Gs.data[0].cpu().numpy()
+    #     else:
+    #         out_Gs = [these_out_Gs]
 
-        return out_Gs
+    #     return out_Gs
 
     def forward(self, images, Gs, intrinsics=None, inference=False):
         """ Estimates SE3 between pair of frames """
-        if not isinstance(Gs, SE3):
-            Gs = SE3(torch.from_numpy(Gs).unsqueeze(0).cuda().float())
+        # if not isinstance(Gs, SE3):
+        #     Gs = SE3(torch.from_numpy(Gs).unsqueeze(0).cuda().float())
 
         features, intrinsics = self.extract_features(images, intrinsics)
         B, _, _, _, _ = images.shape
@@ -187,5 +198,10 @@ class ViTEss(nn.Module):
             pose_preds = self.pose_regressor(pooled_features.reshape([B, -1]))
         else:
             pose_preds = self.pose_regressor(features.reshape([B, -1]))
-        
-        return self.normalize_preds(Gs, pose_preds, inference)
+
+        # return self.normalize_preds(Gs, pose_preds, inference)
+
+        axisangle = pose_preds[..., :3]
+        translation = pose_preds[..., 3:]
+
+        return axisangle, translation
