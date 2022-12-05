@@ -11,12 +11,15 @@ import numpy as np
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from layers import transformation_from_parameters
 from utils import readlines
 from options import MonodepthOptions
 from datasets import KITTIOdomDataset
 import networks
+from rel_pose import ViTEss as RelPose
+
 
 
 # from https://github.com/tinghuiz/SfMLearner
@@ -66,19 +69,27 @@ def evaluate(opt):
     dataloader = DataLoader(dataset, opt.batch_size, shuffle=False,
                             num_workers=opt.num_workers, pin_memory=True, drop_last=False)
 
-    pose_encoder_path = os.path.join(opt.load_weights_folder, "pose_encoder.pth")
-    pose_decoder_path = os.path.join(opt.load_weights_folder, "pose.pth")
+    if opt.pose_model_type == "relpose":
+        pose_network_path = os.path.join(opt.load_weights_folder, "pose.pth")
 
-    pose_encoder = networks.ResnetEncoder(opt.num_layers, False, 2)
-    pose_encoder.load_state_dict(torch.load(pose_encoder_path))
+        pose_network = RelPose()
+        pose_network.load_state_dict(torch.load(pose_network_path))
 
-    pose_decoder = networks.PoseDecoder(pose_encoder.num_ch_enc, 1, 2)
-    pose_decoder.load_state_dict(torch.load(pose_decoder_path))
+        pose_network.cuda()
+    else:
+        pose_encoder_path = os.path.join(opt.load_weights_folder, "pose_encoder.pth")
+        pose_decoder_path = os.path.join(opt.load_weights_folder, "pose.pth")
 
-    pose_encoder.cuda()
-    pose_encoder.eval()
-    pose_decoder.cuda()
-    pose_decoder.eval()
+        pose_encoder = networks.ResnetEncoder(opt.num_layers, False, 2)
+        pose_encoder.load_state_dict(torch.load(pose_encoder_path))
+
+        pose_decoder = networks.PoseDecoder(pose_encoder.num_ch_enc, 1, 2)
+        pose_decoder.load_state_dict(torch.load(pose_decoder_path))
+
+        pose_encoder.cuda()
+        pose_encoder.eval()
+        pose_decoder.cuda()
+        pose_decoder.eval()
 
     pred_poses = []
 
@@ -87,14 +98,17 @@ def evaluate(opt):
     opt.frame_ids = [0, 1]  # pose network only takes two frames as input
 
     with torch.no_grad():
-        for inputs in dataloader:
+        for inputs in tqdm(dataloader):
             for key, ipt in inputs.items():
                 inputs[key] = ipt.cuda()
 
             all_color_aug = torch.cat([inputs[("color_aug", i, 0)] for i in opt.frame_ids], 1)
 
-            features = [pose_encoder(all_color_aug)]
-            axisangle, translation = pose_decoder(features)
+            if opt.pose_model_type == "relpose":
+                axisangle, translation = pose_network(all_color_aug)
+            else:
+                features = [pose_encoder(all_color_aug)]
+                axisangle, translation = pose_decoder(features)
 
             pred_poses.append(
                 transformation_from_parameters(axisangle[:, 0], translation[:, 0]).cpu().numpy())
