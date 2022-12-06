@@ -190,8 +190,8 @@ class ViTEss(nn.Module):
         # if not isinstance(Gs, SE3):
         #     Gs = SE3(torch.from_numpy(Gs).unsqueeze(0).cuda().float())
 
-        img1, img2 = torch.split(images, split_size_or_sections=3, dim=1)
-        images = torch.stack([img1, img2], dim=1)
+        img1, img2 = torch.split(images, split_size_or_sections=3, dim=1)  # (B, N*C, H, W)
+        images = torch.stack([img1, img2], dim=1)  # (B, N, C, H, W)
         features, intrinsics = self.extract_features(images, intrinsics)
         B, _, _, _, _ = images.shape
 

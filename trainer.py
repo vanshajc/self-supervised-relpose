@@ -60,20 +60,22 @@ class Trainer:
         self.models["encoder"] = networks.ResnetEncoder(
             self.opt.num_layers, self.opt.weights_init == "pretrained")
         self.models["encoder"].to(self.device)
-        if self.opt.pose_model_type != "relpose":
-            self.parameters_to_train += list(self.models["encoder"].parameters())
-        else:
-            for param in self.models["encoder"].parameters():
-                param.requires_grad = False
+        self.parameters_to_train += list(self.models["encoder"].parameters())
+        # if self.opt.pose_model_type != "relpose":
+        #     self.parameters_to_train += list(self.models["encoder"].parameters())
+        # else:
+        #     for param in self.models["encoder"].parameters():
+        #         param.requires_grad = False
 
         self.models["depth"] = networks.DepthDecoder(
             self.models["encoder"].num_ch_enc, self.opt.scales)
         self.models["depth"].to(self.device)
-        if self.opt.pose_model_type != "relpose":
-            self.parameters_to_train += list(self.models["depth"].parameters())
-        else:
-            for param in self.models["depth"].parameters():
-                param.requires_grad = False
+        self.parameters_to_train += list(self.models["depth"].parameters())
+        # if self.opt.pose_model_type != "relpose":
+        #     self.parameters_to_train += list(self.models["depth"].parameters())
+        # else:
+        #     for param in self.models["depth"].parameters():
+        #         param.requires_grad = False
 
         if self.use_pose_net:
             if self.opt.pose_model_type == "separate_resnet":
@@ -114,11 +116,12 @@ class Trainer:
                 self.models["encoder"].num_ch_enc, self.opt.scales,
                 num_output_channels=(len(self.opt.frame_ids) - 1))
             self.models["predictive_mask"].to(self.device)
-            if self.opt.pose_model_type != "relpose":
-                self.parameters_to_train += list(self.models["predictive_mask"].parameters())
-            else:
-                for param in self.models["predictive_mask"].parameters():
-                    param.requires_grad = False
+            self.parameters_to_train += list(self.models["predictive_mask"].parameters())
+            # if self.opt.pose_model_type != "relpose":
+            #     self.parameters_to_train += list(self.models["predictive_mask"].parameters())
+            # else:
+            #     for param in self.models["predictive_mask"].parameters():
+            #         param.requires_grad = False
 
         self.model_optimizer = optim.Adam(self.parameters_to_train, self.opt.learning_rate)
         self.model_lr_scheduler = optim.lr_scheduler.StepLR(
