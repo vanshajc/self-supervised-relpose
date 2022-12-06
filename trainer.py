@@ -26,6 +26,8 @@ import networks
 from rel_pose import ViTEss as RelPose
 from IPython import embed
 
+from superglue.matching import Matching
+
 
 class Trainer:
     def __init__(self, options):
@@ -48,6 +50,9 @@ class Trainer:
         assert self.opt.frame_ids[0] == 0, "frame_ids must start with 0"
 
         self.use_pose_net = not (self.opt.use_stereo and self.opt.frame_ids == [0])
+
+        if self.opt.use_superglue:
+            self.superglue = Matching()
 
         if self.opt.use_stereo:
             self.opt.frame_ids.append("s")
@@ -435,6 +440,16 @@ class Trainer:
             reprojection_loss = 0.85 * ssim_loss + 0.15 * l1_loss
 
         return reprojection_loss
+
+    def compute_correspondence_loss(self, inputs, outputs):
+
+        for i, frame_id in enumerate(self.opt.frame_ids[1:]):
+            superglue_data = {'image0': inputs[('color', 0, 0)], 'image1': inputs[('color', frame_id, 0)]}
+            preds = self.superglue(superglue_data)
+            kp1 = preds['keypoints0'][preds['matches0']]
+            kp2 = preds['keypoints1'][preds['matches1']]
+
+        return 0
 
     def compute_losses(self, inputs, outputs):
         """Compute the reprojection and smoothness losses for a minibatch
