@@ -27,6 +27,7 @@ from rel_pose import ViTEss as RelPose
 from IPython import embed
 
 from superglue.matching import Matching
+from eightpoint import eightpoint, get_pose_from_E
 
 
 class Trainer:
@@ -445,16 +446,25 @@ class Trainer:
         return reprojection_loss
 
     def compute_correspondence_loss(self, inputs, outputs):
+        correspondence_losses = []
         for i, frame_id in enumerate(self.opt.frame_ids[1:]):
             superglue_data = {'image0': inputs[('color', 0, 0)], 'image1': inputs[('color', frame_id, 0)]}
             preds = self.superglue(superglue_data)
             kp1 = preds['keypoints0'][preds['matches0']]
             kp2 = preds['keypoints1'][preds['matches1']]
 
-            # TODO: Get t,R from correspondences
+            # Get t,R from correspondences
+            E = eightpoint(kp1, kp2, K1, K2)
+            gt_opts = get_pose_from_E(E)
 
-        # TODO: Geodesic loss between pred t,R and gt t,R
-        return 0
+            all_losses = []
+            for gt_opt in gt_opts:
+                # TODO: Geodesic loss between pred t,R and gt t,R
+                geodesic_loss = None
+                all_losses.append(geodesic_loss)
+            
+            correspondence_losses.append(torch.min(all_losses))
+        return torch.mean(correspondence_losses)
 
     def compute_losses(self, inputs, outputs):
         """Compute the reprojection and smoothness losses for a minibatch
