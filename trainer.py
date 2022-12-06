@@ -445,13 +445,15 @@ class Trainer:
         return reprojection_loss
 
     def compute_correspondence_loss(self, inputs, outputs):
-
         for i, frame_id in enumerate(self.opt.frame_ids[1:]):
             superglue_data = {'image0': inputs[('color', 0, 0)], 'image1': inputs[('color', frame_id, 0)]}
             preds = self.superglue(superglue_data)
             kp1 = preds['keypoints0'][preds['matches0']]
             kp2 = preds['keypoints1'][preds['matches1']]
 
+            # TODO: Get t,R from correspondences
+
+        # TODO: Geodesic loss between pred t,R and gt t,R
         return 0
 
     def compute_losses(self, inputs, outputs):
@@ -459,6 +461,10 @@ class Trainer:
         """
         losses = {}
         total_loss = 0
+
+        if self.opt.use_superglue:
+            correspondence_loss = self.compute_correspondence_loss(inputs, outputs)
+            # TODO: add to losses
 
         for scale in self.opt.scales:
             loss = 0
