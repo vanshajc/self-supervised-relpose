@@ -463,13 +463,16 @@ class Trainer:
                 valid = matches > -1
                 mkpts0 = preds['keypoints0'][0][valid[0]].cpu().numpy()
                 mkpts1 = preds['keypoints1'][0][matches[0, valid[0]]].cpu().numpy()
-                # can't solve the 5 point algorithm
-                if len(mkpts0) < 5:
+                ret = estimate_pose(mkpts0, mkpts1, K1[batch_id], K2[batch_id], 1)
+                # can't find an R, t
+                if ret is None:
                     continue
-                rel_rot, rel_trans, _ = estimate_pose(mkpts0, mkpts1, K1[batch_id], K2[batch_id], 1)
+                rel_rot, rel_trans = ret[0], ret[1]
                 rel_rot_quat = R.from_matrix(rel_rot).as_quat()
                 gt_rel_transform = np.concatenate([rel_trans, rel_rot_quat])
                 gt_rel_transforms.append(torch.from_numpy(gt_rel_transform).float())
+            if not len(gt_rel_transforms):
+                continue
             gt_rel_transforms = torch.stack(gt_rel_transforms).cuda()
             dP = SE3(gt_rel_transforms)
 
