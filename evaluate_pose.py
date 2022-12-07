@@ -71,8 +71,10 @@ def evaluate(opt):
 
     if opt.pose_model_type == "relpose":
         pose_network_path = os.path.join(opt.load_weights_folder, "pose.pth")
+        # pose_network_path = "logs/supervised_relpose/120000.pth"
 
         pose_network = RelPose()
+        # pose_network.load_state_dict(torch.load(pose_network_path)["model"])
         pose_network.load_state_dict(torch.load(pose_network_path))
 
         pose_network.cuda()
@@ -106,6 +108,19 @@ def evaluate(opt):
 
             if opt.pose_model_type == "relpose":
                 axisangle, translation = pose_network(all_color_aug)
+                # quaternion, translation = pose_network(all_color_aug)
+                # from scipy.spatial.transform import Rotation as  R
+                # from layers import get_translation_matrix
+                # rot = torch.zeros((quaternion.shape[0], 4, 4)).cuda()
+                # rot[:, 3, 3] = 1
+                # rot[:, :3, :3] = torch.from_numpy(
+                #     R.from_quat(quaternion[:, 0].detach().cpu().numpy()).as_matrix()
+                # ).float()
+                # T = get_translation_matrix(translation[:, 0])
+                # pred_poses.append(torch.matmul(T, rot).cpu().numpy())
+
+                # pred_poses.append(
+                    # transformation_from_parameters(axisangle[:, 0], translation[:, 0]).cpu().numpy())
             else:
                 features = [pose_encoder(all_color_aug)]
                 axisangle, translation = pose_decoder(features)

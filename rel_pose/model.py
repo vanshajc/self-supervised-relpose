@@ -30,7 +30,7 @@ class ViTEss(nn.Module):
         self.total_num_features = 192
         self.feature_resolution = (24, 24)
         self.num_images = 2
-        self.pose_size = 6
+        self.pose_size = 6  # 7
         self.num_patches = self.feature_resolution[0] * self.feature_resolution[1]
         extractor_final_conv_kernel_size = max(1, 28-self.feature_resolution[0]+1)
         self.pool_feat1 = min(96, 4 * pool_size)
@@ -223,5 +223,8 @@ class ViTEss(nn.Module):
 
         axisangle = pose_preds[..., :3]
         translation = pose_preds[..., 3:]
+        # translation = pose_preds[:, 1, :, :3]
+        # quaternion = pose_preds[:, 1, :, 3:]
 
         return axisangle, translation
+        # return quaternion, translation
