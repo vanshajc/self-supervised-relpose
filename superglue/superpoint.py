@@ -102,7 +102,7 @@ class SuperPoint(nn.Module):
     """
     default_config = {
         'descriptor_dim': 256,
-        'nms_radius': 4,
+        'nms_radius': 3,
         'keypoint_threshold': 0.005,
         'max_keypoints': -1,
         'remove_borders': 4,

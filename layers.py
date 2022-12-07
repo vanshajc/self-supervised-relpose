@@ -103,6 +103,25 @@ def rot_from_axisangle(vec):
     return rot
 
 
+def unit_quat_from_axisangle(vec):
+    """Convert an axisangle rotation into a normalized quaternion (x,y,z,w)
+    Input 'vec' has to be Bx1x3
+    """
+    assert len(vec.shape) == 3 and vec.shape[1] == 1
+    angle = torch.norm(vec, 2, 2, True)
+    axis = vec / (angle + 1e-7)
+
+    q_w = torch.cos(angle / 2)
+    q_x = axis[..., None, 0] * torch.sin(angle / 2)
+    q_y = axis[..., None, 1] * torch.sin(angle / 2)
+    q_z = axis[..., None, 2] * torch.sin(angle / 2)
+    quaternion = torch.cat([q_w, q_x, q_y, q_z], dim=-1)
+    norm = quaternion.norm(-1).unsqueeze(-1)
+    eps = 0.01 * torch.ones_like(norm)
+    quaternion = quaternion / torch.max(eps, norm)
+    return quaternion  # (B, 1, 4)
+
+
 class ConvBlock(nn.Module):
     """Layer to perform a convolution followed by ELU
     """

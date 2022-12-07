@@ -9,10 +9,13 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import time
 
+from lietorch import SE3
+from scipy.spatial.transform import Rotation as R
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torchvision.transforms.functional import rgb_to_grayscale
 from tensorboardX import SummaryWriter
 
 import json
@@ -20,14 +23,14 @@ import json
 from utils import *
 from kitti_utils import *
 from layers import *
+from superglue.utils import estimate_pose
 
 import datasets
 import networks
 from rel_pose import ViTEss as RelPose
-from IPython import embed
 
 from superglue.matching import Matching
-from eightpoint import eightpoint, get_pose_from_E
+# from eightpoint import eightpoint, get_pose_from_E
 
 
 class Trainer:
@@ -53,7 +56,7 @@ class Trainer:
         self.use_pose_net = not (self.opt.use_stereo and self.opt.frame_ids == [0])
 
         if self.opt.use_superglue:
-            self.superglue = Matching()
+            self.superglue = Matching().to(self.device)
 
         if self.opt.use_stereo:
             self.opt.frame_ids.append("s")
@@ -445,26 +448,46 @@ class Trainer:
 
         return reprojection_loss
 
-    def compute_correspondence_loss(self, inputs, outputs):
-        correspondence_losses = []
+    def compute_correspondence_loss(self, inputs, outputs, weight=0.1, eps=0.01):
+        correspondence_loss = 0.
         for i, frame_id in enumerate(self.opt.frame_ids[1:]):
-            superglue_data = {'image0': inputs[('color', 0, 0)], 'image1': inputs[('color', frame_id, 0)]}
-            preds = self.superglue(superglue_data)
-            kp1 = preds['keypoints0'][preds['matches0']]
-            kp2 = preds['keypoints1'][preds['matches1']]
+            K1 = K2 = inputs[('K', 0)].cpu().numpy()
+            gt_rel_transforms = []
+            for batch_id in range(inputs[('color', 0, 0)].shape[0]):
+                superglue_data = {
+                    'image0': rgb_to_grayscale(inputs[('color', 0, 0)][batch_id, None]),
+                    'image1': rgb_to_grayscale(inputs[('color', frame_id, 0)][batch_id, None])
+                }
+                preds = self.superglue(superglue_data)
+                matches = preds['matches0']
+                valid = matches > -1
+                mkpts0 = preds['keypoints0'][0][valid[0]].cpu().numpy()
+                mkpts1 = preds['keypoints1'][0][matches[0, valid[0]]].cpu().numpy()
+                # can't solve the 5 point algorithm
+                if len(mkpts0) < 5:
+                    continue
+                rel_rot, rel_trans, _ = estimate_pose(mkpts0, mkpts1, K1[batch_id], K2[batch_id], 1)
+                rel_rot_quat = R.from_matrix(rel_rot).as_quat()
+                gt_rel_transform = np.concatenate([rel_trans, rel_rot_quat])
+                gt_rel_transforms.append(torch.from_numpy(gt_rel_transform).float())
+            gt_rel_transforms = torch.stack(gt_rel_transforms).cuda()
+            dP = SE3(gt_rel_transforms)
 
-            # Get t,R from correspondences
-            E = eightpoint(kp1, kp2, K1, K2)
-            gt_opts = get_pose_from_E(E)
+            # load predicted t, R
+            axisangle = outputs[("axisangle", 0, frame_id)]
+            translation = outputs[("translation", 0, frame_id)]
+            quaternion = unit_quat_from_axisangle(axisangle[:, 0])
+            pred_rel_transforms = torch.cat([translation, quaternion[:, None]], dim=-1)
+            pred_rel_transforms = pred_rel_transforms.squeeze()
+            dG = SE3(pred_rel_transforms)
 
-            all_losses = []
-            for gt_opt in gt_opts:
-                # TODO: Geodesic loss between pred t,R and gt t,R
-                geodesic_loss = None
-                all_losses.append(geodesic_loss)
-            
-            correspondence_losses.append(torch.min(all_losses))
-        return torch.mean(correspondence_losses)
+            d = (dG * dP.inv()).log()
+            tau, phi = d.split([3, 3], dim=-1)
+            geodesic_loss = (
+                tau.norm(dim=-1).mean() + 
+                phi.norm(dim=-1).mean())
+            correspondence_loss += geodesic_loss
+        return weight * correspondence_loss
 
     def compute_losses(self, inputs, outputs):
         """Compute the reprojection and smoothness losses for a minibatch
@@ -474,7 +497,8 @@ class Trainer:
 
         if self.opt.use_superglue:
             correspondence_loss = self.compute_correspondence_loss(inputs, outputs)
-            # TODO: add to losses
+            total_loss += correspondence_loss
+            losses["loss/correspondence"] = correspondence_loss
 
         for scale in self.opt.scales:
             loss = 0
