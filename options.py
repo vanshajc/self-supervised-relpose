@@ -135,6 +135,9 @@ class MonodepthOptions:
                                  help="normal or shared",
                                  default="separate_resnet",
                                  choices=["posecnn", "separate_resnet", "shared", "relpose"])
+        self.parser.add_argument("--train_prefinal_layer",
+                                 action="store_true",
+                                 help="train relpose from scratch or only pre-final layer")
 
         # SYSTEM options
         self.parser.add_argument("--no_cuda",

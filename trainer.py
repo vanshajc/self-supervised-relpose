@@ -106,6 +106,22 @@ class Trainer:
 
             elif self.opt.pose_model_type == "relpose":
                 self.models["pose"] = RelPose()
+                if self.opt.train_prefinal_layer:
+                    ckpt_dict = torch.load("logs/supervised_relpose/120000.pth")["model"]
+                    model_dict = self.models["pose"].state_dict()
+
+                    merged_state_dict = {}
+                    # merge the two state dicts
+                    for name, param in ckpt_dict.items():
+                        model_param = model_dict[name]
+                        # two shapes disagree
+                        if model_param.shape != param.shape:
+                            merged_state_dict[name] = model_param
+                            model_param.requires_grad = True
+                        else:
+                            merged_state_dict[name] = param
+                            model_param.requires_grad = False
+                    self.models["pose"].load_state_dict(merged_state_dict)
 
             self.models["pose"].to(self.device)
             self.parameters_to_train += list(self.models["pose"].parameters())
