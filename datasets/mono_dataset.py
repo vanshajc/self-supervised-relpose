@@ -193,6 +193,10 @@ class MonoDataset(data.Dataset):
             inputs["depth_gt"] = np.expand_dims(depth_gt, 0)
             inputs["depth_gt"] = torch.from_numpy(inputs["depth_gt"].astype(np.float32))
 
+
+        for i in self.frame_idxs[1:]:
+            inputs[('pose_gt', 0, i)] = self.get_pose(folder, frame_index, frame_index + i, side)
+
         if "s" in self.frame_idxs:
             stereo_T = np.eye(4, dtype=np.float32)
             baseline_sign = -1 if do_flip else 1

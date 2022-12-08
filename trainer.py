@@ -248,6 +248,8 @@ class Trainer:
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
 
+                self.compute_gt_pose_loss(inputs, outputs, losses)
+
                 self.log("train", inputs, outputs, losses)
                 self.val()
 
@@ -377,6 +379,8 @@ class Trainer:
             if "depth_gt" in inputs:
                 self.compute_depth_losses(inputs, outputs, losses)
 
+            self.compute_gt_pose_loss(inputs, outputs, losses)
+
             self.log("val", inputs, outputs, losses)
             del inputs, outputs, losses
 
@@ -448,6 +452,25 @@ class Trainer:
 
         return reprojection_loss
 
+
+    def compute_gt_pose_loss(self, inputs, outputs, losses):
+        loss = 0.0
+        for i, frame_id in enumerate(self.opt.frame_ids[1:]):
+            # load predicted t, R
+            axisangle = outputs[("axisangle", 0, frame_id)]
+            translation = outputs[("translation", 0, frame_id)][:, 0]
+            quaternion = unit_quat_from_axisangle(axisangle[:, 0])
+            pred_rel_transforms = torch.cat([translation, quaternion], dim=-1)
+            pred_rel_transforms = pred_rel_transforms.squeeze()
+
+            pred_gt_transforms = inputs[('pose_gt', 0, frame_id)]
+            loss += compute_geodesic_loss(pred_rel_transforms, pred_gt_transforms.float())
+
+        loss = loss / (len(self.opt.frame_ids) - 1)
+        losses['gt_pose_geodesic'] = loss
+        return loss
+
+
     def compute_correspondence_loss(self, inputs, outputs, weight=0.1, eps=0.01):
         correspondence_loss = 0.
         for i, frame_id in enumerate(self.opt.frame_ids[1:]):
@@ -474,7 +497,6 @@ class Trainer:
             if not len(gt_rel_transforms):
                 continue
             gt_rel_transforms = torch.stack(gt_rel_transforms).cuda()
-            dP = SE3(gt_rel_transforms)
 
             # load predicted t, R
             axisangle = outputs[("axisangle", 0, frame_id)]
@@ -482,14 +504,7 @@ class Trainer:
             quaternion = unit_quat_from_axisangle(axisangle[:, 0])
             pred_rel_transforms = torch.cat([translation, quaternion[:, None]], dim=-1)
             pred_rel_transforms = pred_rel_transforms.squeeze()
-            dG = SE3(pred_rel_transforms)
-
-            d = (dG * dP.inv()).log()
-            tau, phi = d.split([3, 3], dim=-1)
-            geodesic_loss = (
-                tau.norm(dim=-1).mean() + 
-                phi.norm(dim=-1).mean())
-            correspondence_loss += geodesic_loss
+            correspondence_loss += compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms)
         return weight * correspondence_loss
 
     def compute_losses(self, inputs, outputs):
@@ -586,6 +601,7 @@ class Trainer:
 
         total_loss /= self.num_scales
         losses["loss"] = total_loss
+
         return losses
 
     def compute_depth_losses(self, inputs, outputs, losses):

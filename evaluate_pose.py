@@ -20,7 +20,7 @@ from datasets import KITTIOdomDataset
 import networks
 from rel_pose import ViTEss as RelPose
 
-
+/Users/vanshaj/aidtr/members/vanshajc/geom/rel_pose/generate_epipolar_imgs.py
 
 # from https://github.com/tinghuiz/SfMLearner
 def dump_xyz(source_to_target_transformations):

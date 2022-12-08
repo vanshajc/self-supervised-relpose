@@ -14,6 +14,7 @@ import PIL.Image as pil
 from kitti_utils import generate_depth_map
 from .mono_dataset import MonoDataset
 
+from scipy.spatial.transform import Rotation as R
 
 class KITTIDataset(MonoDataset):
     """Superclass for different types of KITTI dataset loaders
@@ -91,6 +92,24 @@ class KITTIOdomDataset(KITTIDataset):
     def __init__(self, *args, **kwargs):
         super(KITTIOdomDataset, self).__init__(*args, **kwargs)
 
+        train_folders = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
+
+        curr_folder = train_folders 
+        self.all_gt_poses = {}
+
+        for sequence in curr_folder:
+            print("Loading ", sequence)
+            # all_gt_poses[int(sequence)] = {0: np.array([0, 0, 0, 0, 0, 0, 1.0])}
+            with open(os.path.join(self.data_path, f'poses/{sequence}.txt'), 'r') as f:
+                gt_poses_path = os.path.join(self.data_path, "poses", f"{sequence}.txt")
+                gt_global_poses = np.loadtxt(gt_poses_path).reshape(-1, 3, 4)
+                gt_global_poses = np.concatenate(
+                    (gt_global_poses, np.zeros((gt_global_poses.shape[0], 1, 4))), 1)
+                gt_global_poses[:, 3, 3] = 1
+
+                self.all_gt_poses[int(sequence)] = gt_global_poses
+
+
     def get_image_path(self, folder, frame_index, side):
         f_str = "{:06d}{}".format(frame_index, self.img_ext)
         image_path = os.path.join(
@@ -99,6 +118,25 @@ class KITTIOdomDataset(KITTIDataset):
             "image_{}".format(self.side_map[side]),
             f_str)
         return image_path
+
+    def get_pose(self, folder, frame_index, other_frame_index, side):
+        try:
+            global_pose = self.all_gt_poses[int(folder)][frame_index]
+            global_pose2 = self.all_gt_poses[int(folder)][other_frame_index]
+        except:
+            import pdb; pdb.set_trace()
+
+        if other_frame_index < frame_index:
+            tmp_p = global_pose.copy()
+            global_pose = global_pose2.copy()
+            global_pose2 = tmp_p
+
+        p = np.linalg.inv(np.dot(np.linalg.inv(global_pose2), global_pose))
+        p_xyz = p[:3, 3]
+        p_R = p[:3, :3]
+        p_q = R.from_matrix(p_R).as_quat()
+        rel_pose = np.concatenate([p_xyz, p_q])
+        return rel_pose
 
 
 class KITTIDepthDataset(KITTIDataset):

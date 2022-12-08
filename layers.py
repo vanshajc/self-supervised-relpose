@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from lietorch import SE3
 
 
 def disp_to_depth(disp, min_depth, max_depth):
@@ -23,6 +24,18 @@ def disp_to_depth(disp, min_depth, max_depth):
     scaled_disp = min_disp + (max_disp - min_disp) * disp
     depth = 1 / scaled_disp
     return scaled_disp, depth
+
+
+
+def compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms):
+    dP = SE3(gt_rel_transforms)
+    dG = SE3(pred_rel_transforms)
+    d = (dG * dP.inv()).log()
+    tau, phi = d.split([3, 3], dim=-1)
+    geodesic_loss = (
+        tau.norm(dim=-1).mean() + 
+        phi.norm(dim=-1).mean())
+    return geodesic_loss
 
 
 def transformation_from_parameters(axisangle, translation, invert=False):
