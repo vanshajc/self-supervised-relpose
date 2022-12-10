@@ -112,3 +112,18 @@ def download_model_if_doesnt_exist(model_name):
             f.extractall(model_path)
 
         print("   Model unzipped to {}".format(model_path))
+
+
+def merge_state_dict(model_state_dict, ckpt_state_dict):
+    # merge the two state dicts
+    merged_state_dict, matched = {}, {}
+    for name, param in ckpt_state_dict.items():
+        model_param = model_state_dict[name]
+        # two shapes disagree
+        if model_param.shape != param.shape:
+            merged_state_dict[name] = model_param
+            matched[name] = False
+        else:
+            merged_state_dict[name] = param
+            matched[name] = True
+    return merged_state_dict, matched

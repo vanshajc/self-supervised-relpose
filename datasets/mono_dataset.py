@@ -46,6 +46,7 @@ class MonoDataset(data.Dataset):
                  frame_idxs,
                  num_scales,
                  is_train=False,
+                 load_corresp=False,
                  img_ext='.jpg'):
         super(MonoDataset, self).__init__()
 
@@ -59,6 +60,7 @@ class MonoDataset(data.Dataset):
         self.frame_idxs = frame_idxs
 
         self.is_train = is_train
+        self.load_corresp = load_corresp
         self.img_ext = img_ext
 
         self.loader = pil_loader
@@ -196,6 +198,10 @@ class MonoDataset(data.Dataset):
 
         for i in self.frame_idxs[1:]:
             inputs[('pose_gt', 0, i)] = self.get_pose(folder, frame_index, frame_index + i, side)
+            if self.load_corresp:
+                rel_pose, superglue_valid = self.get_corresp(folder, frame_index, i, side)
+                inputs[('superglue_pose', 0, i)] = rel_pose
+                inputs[('superglue_valid', 0, i)] = superglue_valid
 
         if "s" in self.frame_idxs:
             stereo_T = np.eye(4, dtype=np.float32)

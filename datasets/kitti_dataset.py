@@ -138,6 +138,25 @@ class KITTIOdomDataset(KITTIDataset):
         rel_pose = np.concatenate([p_xyz, p_q])
         return rel_pose
 
+    def get_corresp(self, folder, frame_index, frame_id, side):
+        f_str = "{:06d}{}".format(frame_index, ".npz")
+        corresp_path = os.path.join(
+            self.data_path,
+            "superglue_poses",
+            "sequences/{:02d}".format(int(folder)),
+            "image_{}".format(self.side_map[side]),
+            f_str)
+        corresp = np.load(corresp_path, allow_pickle=True)
+        corresp_dict = corresp['arr_0'].item()
+        rot = corresp_dict[("superglue_rot", frame_id)]
+        trans = corresp_dict[("superglue_trans", frame_id)]
+        valid = corresp_dict[("superglue_valid", frame_id)]
+        if frame_id < 0:
+            rot = R.from_quat(rot).inv().as_quat()
+            trans = -trans
+        rel_pose = np.concatenate([trans, rot])
+        return rel_pose, valid
+
 
 class KITTIDepthDataset(KITTIDataset):
     """KITTI dataset which uses the updated ground truth depth maps

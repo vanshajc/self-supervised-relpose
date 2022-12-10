@@ -106,21 +106,26 @@ class Trainer:
 
             elif self.opt.pose_model_type == "relpose":
                 self.models["pose"] = RelPose()
+                # only train pre-final layer of relpose
                 if self.opt.train_prefinal_layer:
                     ckpt_dict = torch.load("logs/supervised_relpose/120000.pth")["model"]
                     model_dict = self.models["pose"].state_dict()
+                    merged_state_dict, matched = merge_state_dict(model_dict, ckpt_dict)
 
-                    merged_state_dict = {}
-                    # merge the two state dicts
-                    for name, param in ckpt_dict.items():
-                        model_param = model_dict[name]
-                        # two shapes disagree
-                        if model_param.shape != param.shape:
-                            merged_state_dict[name] = model_param
-                            model_param.requires_grad = True
+                    for name, isMatched in matched.keys():
+                        if isMatched:
+                            model_dict[name].param.requires_grad = False
                         else:
-                            merged_state_dict[name] = param
-                            model_param.requires_grad = False
+                            model_dict[name].param.requires_grad = True
+                    self.models["pose"].load_state_dict(merged_state_dict)
+
+                # initialize relpose using pretrained weights
+                if self.opt.relpose_initialize is not None:
+                    ckpt_dict = torch.load(self.opt.relpose_initialize)["model"]
+                    if "module" in list(ckpt_dict.keys())[0]:
+                        ckpt_dict = {k[7:]: v for k, v in ckpt_dict.items()}
+                    model_dict = self.models["pose"].state_dict()
+                    merged_state_dict, _ = merge_state_dict(model_dict, ckpt_dict)
                     self.models["pose"].load_state_dict(merged_state_dict)
 
             self.models["pose"].to(self.device)
@@ -170,13 +175,13 @@ class Trainer:
 
         train_dataset = self.dataset(
             self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
+            self.opt.frame_ids, 4, is_train=True, load_corresp=self.opt.use_superglue, img_ext=img_ext)
         self.train_loader = DataLoader(
             train_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
         val_dataset = self.dataset(
             self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
+            self.opt.frame_ids, 4, is_train=False, load_corresp=self.opt.use_superglue, img_ext=img_ext)
         self.val_loader = DataLoader(
             val_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
@@ -487,32 +492,11 @@ class Trainer:
         return loss
 
 
-    def compute_correspondence_loss(self, inputs, outputs, weight=0.1, eps=0.01):
+    def compute_correspondence_loss(self, inputs, outputs, weight=0.1):
         correspondence_loss = 0.
         for i, frame_id in enumerate(self.opt.frame_ids[1:]):
-            K1 = K2 = inputs[('K', 0)].cpu().numpy()
-            gt_rel_transforms = []
-            for batch_id in range(inputs[('color', 0, 0)].shape[0]):
-                superglue_data = {
-                    'image0': rgb_to_grayscale(inputs[('color', 0, 0)][batch_id, None]),
-                    'image1': rgb_to_grayscale(inputs[('color', frame_id, 0)][batch_id, None])
-                }
-                preds = self.superglue(superglue_data)
-                matches = preds['matches0']
-                valid = matches > -1
-                mkpts0 = preds['keypoints0'][0][valid[0]].cpu().numpy()
-                mkpts1 = preds['keypoints1'][0][matches[0, valid[0]]].cpu().numpy()
-                ret = estimate_pose(mkpts0, mkpts1, K1[batch_id], K2[batch_id], 1)
-                # can't find an R, t
-                if ret is None:
-                    continue
-                rel_rot, rel_trans = ret[0], ret[1]
-                rel_rot_quat = R.from_matrix(rel_rot).as_quat()
-                gt_rel_transform = np.concatenate([rel_trans, rel_rot_quat])
-                gt_rel_transforms.append(torch.from_numpy(gt_rel_transform).float())
-            if not len(gt_rel_transforms):
-                continue
-            gt_rel_transforms = torch.stack(gt_rel_transforms).cuda()
+            gt_rel_transforms = inputs[("superglue_pose", 0, frame_id)]
+            validity_mask = inputs[("superglue_valid", 0, frame_id)]
 
             # load predicted t, R
             axisangle = outputs[("axisangle", 0, frame_id)]
@@ -520,8 +504,9 @@ class Trainer:
             quaternion = unit_quat_from_axisangle(axisangle[:, 0])
             pred_rel_transforms = torch.cat([translation, quaternion[:, None]], dim=-1)
             pred_rel_transforms = pred_rel_transforms.squeeze()
-            correspondence_loss += compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms)
-        return weight * correspondence_loss
+            correspondence_loss += compute_geodesic_loss(
+                pred_rel_transforms, gt_rel_transforms.float(), validity_mask)
+        return weight * correspondence_loss / i
 
     def compute_losses(self, inputs, outputs):
         """Compute the reprojection and smoothness losses for a minibatch

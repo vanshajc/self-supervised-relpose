@@ -138,6 +138,13 @@ class MonodepthOptions:
         self.parser.add_argument("--train_prefinal_layer",
                                  action="store_true",
                                  help="train relpose from scratch or only pre-final layer")
+        self.parser.add_argument("--relpose_initialize",
+                                 default=None,
+                                 help="train relpose from scratch or initialize using weights",
+        )
+        self.parser.add_argument("--predict_per_img",
+                                 action="store_true",
+                                 help="use relpose predict 2 outputs (if true) or 1 (default)")
 
         # SYSTEM options
         self.parser.add_argument("--no_cuda",

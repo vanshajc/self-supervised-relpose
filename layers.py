@@ -27,14 +27,19 @@ def disp_to_depth(disp, min_depth, max_depth):
 
 
 
-def compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms):
+def compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms, validity_mask=None):
     dP = SE3(gt_rel_transforms)
     dG = SE3(pred_rel_transforms)
     d = (dG * dP.inv()).log()
     tau, phi = d.split([3, 3], dim=-1)
-    geodesic_loss = (
-        tau.norm(dim=-1).mean() + 
-        phi.norm(dim=-1).mean())
+    if validity_mask is None:
+        geodesic_loss = (
+            tau.norm(dim=-1).mean() + 
+            phi.norm(dim=-1).mean())
+    else:
+        geodesic_loss = (
+            (tau.norm(dim=-1) * validity_mask).mean() + 
+            (phi.norm(dim=-1) * validity_mask).mean())
     return geodesic_loss
 
 

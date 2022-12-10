@@ -10,7 +10,7 @@ from .modules.vision_transformer import _create_vision_transformer
 
 
 class ViTEss(nn.Module):
-    def __init__(self, args=None):
+    def __init__(self, args=None, predict_per_img=False):
         super(ViTEss, self).__init__()
         no_pos_encoding = False
         noess = False
@@ -21,6 +21,7 @@ class ViTEss(nn.Module):
         fc_hidden_size = 512
         pool_size = 60
         transformer_depth = 6
+        self.predict_per_img = predict_per_img
 
         # hyperparams
         # self.noess = None
@@ -90,39 +91,44 @@ class ViTEss(nn.Module):
                 nn.Conv2d(self.pool_feat1, self.pool_feat2, kernel_size=1, bias=True),
                 nn.BatchNorm2d(self.pool_feat2)
             )
-            # self.pose_regressor = nn.Sequential(
-            #     nn.Linear(self.H, self.H2),
-            #     nn.ReLU(),
-            #     nn.Linear(self.H2, self.H2),
-            #     nn.ReLU(), 
-            #     nn.Linear(self.H2, self.num_images * self.pose_size),
-            #     nn.Unflatten(1, (self.num_images, self.pose_size))
-            # )
-            self.pose_regressor = nn.Sequential(
-                nn.Linear(self.H, self.H2),
-                nn.ReLU(),
-                nn.Linear(self.H2, self.H2),
-                nn.ReLU(), 
-                nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
-                nn.Unflatten(1, (self.num_images - 1, self.pose_size))
-            )
+
+            if self.predict_per_img:
+                self.pose_regressor = nn.Sequential(
+                    nn.Linear(self.H, self.H2),
+                    nn.ReLU(),
+                    nn.Linear(self.H2, self.H2),
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, self.num_images * self.pose_size),
+                    nn.Unflatten(1, (self.num_images, self.pose_size))
+                )
+            else:
+                self.pose_regressor = nn.Sequential(
+                    nn.Linear(self.H, self.H2),
+                    nn.ReLU(),
+                    nn.Linear(self.H2, self.H2),
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
+                    nn.Unflatten(1, (self.num_images - 1, self.pose_size))
+                )
         else:
-            # self.pose_regressor = nn.Sequential(
-            #     nn.Linear(self.H, self.H2), 
-            #     nn.ReLU(), 
-            #     nn.Linear(self.H2, self.H2), 
-            #     nn.ReLU(), 
-            #     nn.Linear(self.H2, self.num_images * self.pose_size),
-            #     nn.Unflatten(1, (self.num_images, self.pose_size))
-            # )
-            self.pose_regressor = nn.Sequential(
-                nn.Linear(self.H, self.H2), 
-                nn.ReLU(), 
-                nn.Linear(self.H2, self.H2), 
-                nn.ReLU(), 
-                nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
-                nn.Unflatten(1, (self.num_images - 1, self.pose_size))
-            )
+            if self.predict_per_img:
+                self.pose_regressor = nn.Sequential(
+                    nn.Linear(self.H, self.H2), 
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, self.H2), 
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, self.num_images * self.pose_size),
+                    nn.Unflatten(1, (self.num_images, self.pose_size))
+                )
+            else:
+                self.pose_regressor = nn.Sequential(
+                    nn.Linear(self.H, self.H2), 
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, self.H2), 
+                    nn.ReLU(), 
+                    nn.Linear(self.H2, (self.num_images - 1) * self.pose_size),
+                    nn.Unflatten(1, (self.num_images - 1, self.pose_size))
+                )
 
     def update_intrinsics(self, input_shape, intrinsics):
         sizey, sizex = self.feature_resolution
