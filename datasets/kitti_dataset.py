@@ -151,7 +151,7 @@ class KITTIOdomDataset(KITTIDataset):
         rot = corresp_dict[("superglue_rot", frame_id)]
         trans = corresp_dict[("superglue_trans", frame_id)]
         valid = corresp_dict[("superglue_valid", frame_id)]
-        if frame_id < 0:
+        if frame_id < 0 and valid:
             rot = R.from_quat(rot).inv().as_quat()
             trans = -trans
         rel_pose = np.concatenate([trans, rot])

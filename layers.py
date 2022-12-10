@@ -28,18 +28,15 @@ def disp_to_depth(disp, min_depth, max_depth):
 
 
 def compute_geodesic_loss(pred_rel_transforms, gt_rel_transforms, validity_mask=None):
-    dP = SE3(gt_rel_transforms)
-    dG = SE3(pred_rel_transforms)
+    if validity_mask is None:
+        validity_mask = torch.ones(pred_rel_transforms.shape[0]).bool().cuda()
+    dP = SE3(gt_rel_transforms[validity_mask])
+    dG = SE3(pred_rel_transforms[validity_mask])
     d = (dG * dP.inv()).log()
     tau, phi = d.split([3, 3], dim=-1)
-    if validity_mask is None:
-        geodesic_loss = (
-            tau.norm(dim=-1).mean() + 
-            phi.norm(dim=-1).mean())
-    else:
-        geodesic_loss = (
-            (tau.norm(dim=-1) * validity_mask).mean() + 
-            (phi.norm(dim=-1) * validity_mask).mean())
+    geodesic_loss = (
+        tau.norm(dim=-1).mean() + 
+        phi.norm(dim=-1).mean())
     return geodesic_loss
 
 

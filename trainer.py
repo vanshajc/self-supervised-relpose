@@ -55,8 +55,8 @@ class Trainer:
 
         self.use_pose_net = not (self.opt.use_stereo and self.opt.frame_ids == [0])
 
-        if self.opt.use_superglue:
-            self.superglue = Matching().to(self.device)
+        # if self.opt.use_superglue:
+        #     self.superglue = Matching().to(self.device)
 
         if self.opt.use_stereo:
             self.opt.frame_ids.append("s")
@@ -476,7 +476,7 @@ class Trainer:
 
     def compute_gt_pose_loss(self, inputs, outputs, losses):
         loss = 0.0
-        for i, frame_id in enumerate(self.opt.frame_ids[1:]):
+        for i, frame_id in enumerate(self.opt.frame_ids[2:]):
             # load predicted t, R
             axisangle = outputs[("axisangle", 0, frame_id)]
             translation = outputs[("translation", 0, frame_id)][:, 0]
@@ -504,9 +504,10 @@ class Trainer:
             quaternion = unit_quat_from_axisangle(axisangle[:, 0])
             pred_rel_transforms = torch.cat([translation, quaternion[:, None]], dim=-1)
             pred_rel_transforms = pred_rel_transforms.squeeze()
+
             correspondence_loss += compute_geodesic_loss(
                 pred_rel_transforms, gt_rel_transforms.float(), validity_mask)
-        return weight * correspondence_loss / i
+        return weight * correspondence_loss / (len(self.opt.frame_ids) - 1)
 
     def compute_losses(self, inputs, outputs):
         """Compute the reprojection and smoothness losses for a minibatch
